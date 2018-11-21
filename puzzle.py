@@ -5,38 +5,7 @@ import torch
 torch.manual_seed(1)
 
 
-def oneHot(word, vocab):
-    vec = [0]*len(vocab)
-    vec[vocab[word]] = 1
-    return vec
 
-def makePuzzleVector(puzzle, vocab):
-    choices, _ = puzzle
-    oneHotVec = []
-    for choice in choices:
-        oneHotVec += oneHot(str(choice), vocab)
-    #oneHot2 = oneHot(str(num2), vocab)
-    #oneHot3 = oneHot(str(num3), vocab)
-    return torch.FloatTensor(oneHotVec).view(1, -1)
-
-def makePuzzleVectorAlt(puzzle, vocab):
-    choices, _ = puzzle
-    oneHotVec = []
-    for choice in choices:
-        oneHotVec += oneHot(str(choice), vocab)
-    return torch.FloatTensor(oneHotVec).view(len(choices), -1)
-
-
-def makePuzzleTarget(label):
-    return torch.LongTensor([label])    
-
-def buildVocab(puzzles):
-    word_to_ix = {}
-    for choices, _ in puzzles:
-        for word in choices:
-            if word not in word_to_ix:
-                word_to_ix[word] = len(word_to_ix)
-    return word_to_ix
 
 def flipCoin():
     return random.random() < 0.5
@@ -125,7 +94,7 @@ class OddManOutPuzzleGenerator(PuzzleGenerator):
         choices = correct + [oddman]
         random.shuffle(choices)
         answer = self.findOddmen(choices)[0]
-        return (choices, answer)
+        return (tuple(choices), answer)
     
 class AltTwoDigitPuzzleGenerator(PuzzleGenerator):
     
@@ -142,5 +111,6 @@ class AltTwoDigitPuzzleGenerator(PuzzleGenerator):
     def generate(self):
         return self.generator.generate()
             
-        
+ 
+       
         
