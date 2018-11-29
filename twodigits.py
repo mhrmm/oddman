@@ -7,6 +7,55 @@ import torch.optim as optim
 from puzzle import AltTwoDigitPuzzleGenerator
 
 
+parameters = {
+        'numChoices': 5,
+        'batchSize': 3000,
+        'numEpochs': 1000,
+        'base': 10,
+        'hiddenLayerSize': 100,
+        'optimizer': 'adam',
+        'trainingDataSize': 100000
+        }
+
+class TrainingParameters:
+    
+    def __init__(self, params):
+        self._chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
+        self._params = params
+        
+    def getNumChoices(self):
+        return self._params['numChoices']
+
+    def getBatchSize(self):
+        return self._params['batchSize']
+    
+    def getNumEpochs(self):
+        return self._params['numEpochs']
+
+    def getBase(self):
+        base = self._params['base']
+        if base > 62:
+            raise Exception('Base size greater than {} is not supported.'
+                            .format(len(self._chars)))
+        return self._chars[:base]
+    
+    def getHiddenLayerSize(self):
+        return self._params['hiddenLayerSize']
+    
+    def getTrainingDataSize(self):
+        return self._params['trainingDataSize']
+    
+    def getOptimizerFactory(self):
+        optimizer = self._params['optimizer']
+        if optimizer == 'adam':
+            return optim.Adam
+        elif optimizer == 'sgd':
+            return lambda p: optim.SGD(p, lr=0.1)
+        else:
+            raise Exception('Optimizer "{}" is not supported.'.format(optimizer))
+
+            
+
 if torch.cuda.is_available():
     print("using gpu")
     cuda = torch.device('cuda:0')
@@ -78,13 +127,14 @@ class TwoLayerClassifier(nn.Module):
     
 class Trainer:
     
-    def __init__(self, generator, num_choices):
-        self.num_training_epochs = 1000
-        self.training_data_size = 100000
-        self.test_data_size = 100
-        self.hidden_layer_size = 100
-        self.num_choices = num_choices
+    def __init__(self, generator, params):
         self.generator = generator
+        self.num_training_epochs = params.getNumEpochs()
+        self.training_data_size = params.getTrainingDataSize()
+        self.test_data_size = 100
+        self.hidden_layer_size = params.getHiddenLayerSize()
+        self.num_choices = params.getNumChoices()
+        self.optimizerFactory = params.getOptimizerFactory()
 
     def generateData(self):
         self.data = set(self.generator.getTrainingData(self.training_data_size))
@@ -104,8 +154,7 @@ class Trainer:
                                    self.hidden_layer_size)
         print(model)
         loss_function = nn.NLLLoss()
-        #optimizer = optim.SGD(model.parameters(), lr=0.1)
-        optimizer = optim.Adam(model.parameters())
+        optimizer = self.optimizerFactory(model.parameters())
         for epoch in range(self.num_training_epochs):
             print('epoch {}'.format(epoch))
             for instance, label in self.data:
@@ -140,8 +189,7 @@ class Trainer:
         cudaify(model)
         print(model)
         loss_function = nn.NLLLoss()
-        #optimizer = optim.SGD(model.parameters(), lr=0.1)
-        optimizer = optim.Adam(model.parameters())
+        optimizer = self.optimizerFactory(model.parameters())
         for epoch in range(self.num_training_epochs):
             model.zero_grad()
             batch = random.sample(self.data, batch_size)
@@ -174,16 +222,13 @@ class Trainer:
         return correct/len(test_d)
 
 
-
-NUM_CHOICES = 5
-BATCH_SIZE = 3000
-
-BASE_10 = 'ABCDEFGHIJK'
-BASE_26 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-BASE_36 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-BASE_62 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz'
-
-trainer = Trainer(AltTwoDigitPuzzleGenerator(BASE_10, NUM_CHOICES), NUM_CHOICES)
-model = trainer.batchTrain(BATCH_SIZE)    
-print('training accuracy = {}'.format(trainer.evaluate(model, trainer.data[:500])))
-print('test accuracy = {}'.format(trainer.evaluate(model, trainer.test_data)))
+def run(params):
+    trainer = Trainer(
+            AltTwoDigitPuzzleGenerator(params.getBase(), params.getNumChoices()),
+            params)
+    model = trainer.batchTrain(params.getBatchSize())    
+    print('training accuracy = {}'.format(trainer.evaluate(model, trainer.data[:1000])))
+    print('test accuracy = {}'.format(trainer.evaluate(model, trainer.test_data)))
+    
+    
+run(TrainingParameters(parameters))
