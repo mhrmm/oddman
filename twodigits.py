@@ -9,12 +9,12 @@ from puzzle import AltTwoDigitPuzzleGenerator
 
 parameters = {
         'numChoices': 5,
-        'batchSize': 3000,
-        'numEpochs': 1000,
-        'base': 10,
-        'hiddenLayerSize': 100,
+        'batchSize': 300,
+        'numEpochs': 2000,
+        'base': 8,
+        'hiddenLayerSize': 20,
         'optimizer': 'adam',
-        'trainingDataSize': 100000
+        'trainingDataSize': 50000
         }
 
 class TrainingParameters:
@@ -112,8 +112,12 @@ def buildVocab(puzzles):
 
 class TwoLayerClassifier(nn.Module): 
 
-    def __init__(self, num_labels, input_size, hidden_size):
+    def __init__(self, vocab, num_labels, hidden_size):
         super(TwoLayerClassifier, self).__init__()
+        self.vocab = vocab
+        self.num_labels = num_labels
+        input_size = num_labels * len(vocab)
+        self.hidden_size = hidden_size
         self.linear1 = nn.Linear(input_size, hidden_size)
         #self.linearh = nn.Linear(hidden_size, hidden_size)
         self.linear2 = nn.Linear(hidden_size, num_labels)
@@ -123,6 +127,28 @@ class TwoLayerClassifier(nn.Module):
         #nextout = self.linearh(nextout).clamp(min=0)
         nextout = self.linear2(nextout)
         return F.log_softmax(nextout, dim=1)
+    
+    def dump(self):
+        weights = {}
+        for word in self.vocab:
+            wordIndex = self.vocab[word]
+            for label in range(self.num_labels):
+                weights[(word, label)] = list(self.linear1.weight[:,label * len(self.vocab) + wordIndex].data.numpy())
+        return weights
+    
+    @staticmethod
+    def initializeFromModelAndNewVocab(model, vocab):
+        result = TwoLayerClassifier(vocab, model.num_labels, model.hidden_size)
+        linear1Weights = [[0.0]*model.hidden_size for i in range(model.num_labels * len(vocab))]
+        for ((word, choiceIndex), weightVector) in model.dump().items():
+            linear1Weights[len(vocab) * choiceIndex + vocab[word]] = weightVector 
+        linear1Weights = torch.t(FloatTensor(linear1Weights))
+        linear1Weights.requires_grad = True
+        result.linear1.weight = torch.nn.Parameter(linear1Weights)
+        #result.linear2.weight = model.linear2.weight
+        return result
+            
+            
 
     
 class Trainer:
@@ -135,6 +161,9 @@ class Trainer:
         self.hidden_layer_size = params.getHiddenLayerSize()
         self.num_choices = params.getNumChoices()
         self.optimizerFactory = params.getOptimizerFactory()
+        self.batch_size = params.getBatchSize()
+        self.generateData()
+
 
     def generateData(self):
         self.data = set(self.generator.getTrainingData(self.training_data_size))
@@ -146,11 +175,12 @@ class Trainer:
         self.data = list(self.data)
         self.test_data = list(self.test_data)
         self.vocab = buildVocab(self.data + self.test_data)
+
             
     def train(self):
-        self.generateData()
-        model = TwoLayerClassifier(self.num_choices, 
-                                   self.num_choices * len(self.vocab), 
+        #self.generateData()
+        model = TwoLayerClassifier(self.vocab,
+                                   self.num_choices, 
                                    self.hidden_layer_size)
         print(model)
         loss_function = nn.NLLLoss()
@@ -180,20 +210,29 @@ class Trainer:
             print('train: {:.2f}; test: {:.2f}'.format(train_acc, test_acc))
         return model
 
-
-    def batchTrain(self, batch_size):
-        self.generateData()
-        model = TwoLayerClassifier(self.num_choices, 
-                                   self.num_choices * len(self.vocab), 
+    def run(self):
+        model = TwoLayerClassifier(self.vocab,
+                                   self.num_choices, 
                                    self.hidden_layer_size)
         cudaify(model)
+        
+        return self.batchTrain(model)
+        
+
+    def bootstrap(self, model):
+        self.generateData()
+        return self.batchTrain(model)
+        
+
+    def batchTrain(self, model):
         print(model)
         loss_function = nn.NLLLoss()
+        batch_size = self.batch_size
         optimizer = self.optimizerFactory(model.parameters())
         for epoch in range(self.num_training_epochs):
             model.zero_grad()
             batch = random.sample(self.data, batch_size)
-            input_matrix = makePuzzleMatrix(batch, self.vocab)
+            input_matrix = makePuzzleMatrix(batch, model.vocab)
             target = makePuzzleTargets([label for (_, label) in batch])
             log_probs = model(input_matrix)
             loss = loss_function(log_probs, target)
@@ -208,7 +247,7 @@ class Trainer:
 
     def evaluate(self, model, test_d):
         """Evaluates the trained network on test data."""
-        word_to_ix = self.vocab
+        word_to_ix = model.vocab
         with torch.no_grad():
             correct = 0
             for instance, label in test_d:
@@ -226,9 +265,29 @@ def run(params):
     trainer = Trainer(
             AltTwoDigitPuzzleGenerator(params.getBase(), params.getNumChoices()),
             params)
-    model = trainer.batchTrain(params.getBatchSize())    
+    model = trainer.run() 
     print('training accuracy = {}'.format(trainer.evaluate(model, trainer.data[:1000])))
     print('test accuracy = {}'.format(trainer.evaluate(model, trainer.test_data)))
+
+    #weights = model.dump()
+
+    parameters['base'] = 8
+    params = TrainingParameters(parameters)
+    trainer = Trainer(
+            AltTwoDigitPuzzleGenerator(params.getBase(), params.getNumChoices()),
+            params)
     
     
-run(TrainingParameters(parameters))
+    
+    newInit = TwoLayerClassifier.initializeFromModelAndNewVocab(model, trainer.vocab)
+    model2 = trainer.bootstrap(newInit) 
+    print('training accuracy = {}'.format(trainer.evaluate(model2, trainer.data[:1000])))
+    print('test accuracy = {}'.format(trainer.evaluate(model2, trainer.test_data)))
+    #return model, model2
+
+    return model
+    
+    
+model = run(TrainingParameters(parameters))
+
+
