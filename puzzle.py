@@ -111,6 +111,27 @@ class AltTwoDigitPuzzleGenerator(PuzzleGenerator):
     def generate(self):
         return self.generator.generate()
             
+
+class ThreeDigitPuzzleGenerator(PuzzleGenerator):
+    
+    def __init__(self, digits, choicesPerPuzzle):
+        buckets = dict()
+        for digit1 in digits:
+            for digit2 in digits:
+                bucket1 = set()
+                bucket2 = set()
+                bucket3 = set()
+                for digit3 in digits:
+                    bucket3.add(str(digit1) + str(digit2) + str(digit3))
+                    bucket2.add(str(digit1) + str(digit3) + str(digit2))
+                    bucket1.add(str(digit3) + str(digit1) + str(digit2))    
+                buckets['*' + str(digit2) + str(digit3)] = list(bucket1)
+                buckets[str(digit1) + '*' + str(digit2)] = list(bucket2)
+                buckets[str(digit1) + str(digit2) + '*'] = list(bucket3)
+        self.generator = OddManOutPuzzleGenerator(buckets, choicesPerPuzzle)
+        
+    def generate(self):
+        return self.generator.generate()
  
        
         
