@@ -9,12 +9,12 @@ from puzzle import AltTwoDigitPuzzleGenerator
 
 parameters = {
         'numChoices': 5,
-        'batchSize': 300,
+        'batchSize': 1000,
         'numEpochs': 2000,
-        'base': 8,
-        'hiddenLayerSize': 20,
+        'base': 24,
+        'hiddenLayerSize': 100,
         'optimizer': 'adam',
-        'trainingDataSize': 50000
+        'trainingDataSize': 200000
         }
 
 class TrainingParameters:
@@ -133,7 +133,7 @@ class TwoLayerClassifier(nn.Module):
         for word in self.vocab:
             wordIndex = self.vocab[word]
             for label in range(self.num_labels):
-                weights[(word, label)] = list(self.linear1.weight[:,label * len(self.vocab) + wordIndex].data.numpy())
+                weights[(word, label)] = list(self.linear1.weight[:,label * len(self.vocab) + wordIndex].data.cpu().numpy())
         return weights
     
     @staticmethod
@@ -146,6 +146,7 @@ class TwoLayerClassifier(nn.Module):
         linear1Weights.requires_grad = True
         result.linear1.weight = torch.nn.Parameter(linear1Weights)
         #result.linear2.weight = model.linear2.weight
+        cudaify(result)
         return result
             
             
@@ -270,20 +271,20 @@ def run(params):
     print('test accuracy = {}'.format(trainer.evaluate(model, trainer.test_data)))
 
     #weights = model.dump()
-
-    parameters['base'] = 8
-    params = TrainingParameters(parameters)
-    trainer = Trainer(
-            AltTwoDigitPuzzleGenerator(params.getBase(), params.getNumChoices()),
-            params)
+    
+    for base in []:#[12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62]:
+        parameters['base'] = base
+        params = TrainingParameters(parameters)
+        trainer = Trainer(
+                AltTwoDigitPuzzleGenerator(params.getBase(), params.getNumChoices()),
+                params)
+        newInit = TwoLayerClassifier.initializeFromModelAndNewVocab(model, trainer.vocab)
+        model2 = trainer.bootstrap(newInit) 
+        print('training accuracy = {}'.format(trainer.evaluate(model2, trainer.data[:1000])))
+        print('test accuracy = {}'.format(trainer.evaluate(model2, trainer.test_data)))
+        model = model2
     
     
-    
-    newInit = TwoLayerClassifier.initializeFromModelAndNewVocab(model, trainer.vocab)
-    model2 = trainer.bootstrap(newInit) 
-    print('training accuracy = {}'.format(trainer.evaluate(model2, trainer.data[:1000])))
-    print('test accuracy = {}'.format(trainer.evaluate(model2, trainer.test_data)))
-    #return model, model2
 
     return model
     
